@@ -6,8 +6,10 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.support.v4.content.ContextCompat
 import android.util.AttributeSet
+import android.util.DisplayMetrics
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import io.reactivex.Observable
 import io.reactivex.subjects.PublishSubject
 import kotlin.math.roundToInt
@@ -15,14 +17,21 @@ import kotlin.math.roundToInt
 
 class ColorPickerView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null, defStyle: Int = 0) : View(context, attrs, defStyle) {
 
+    private val totalWidth by lazy {
+        val displayMetrics = DisplayMetrics()
+        (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.getMetrics(displayMetrics)
+        displayMetrics.widthPixels
+    }
     private val chooseDrawable = ContextCompat.getDrawable(context, R.drawable.ic_choose_pallete1)
     private val colorPaint = Paint()
     private val scaleFactor = context.resources.displayMetrics.density
     private val maxVerticalRects = 7
+    private val totalHeight = 49 * scaleFactor
 
     private var colors: List<SmallColor> = listOf()
     private var currentPosition = SelectionPosition()
     private var colorSize = ColorSize(5F * scaleFactor, 7F * scaleFactor)
+
 
     private val verticalPositionSubject = PublishSubject.create<Int>()
     private val horizontalPositionSubject = PublishSubject.create<Int>()
@@ -44,23 +53,22 @@ class ColorPickerView @JvmOverloads constructor(context: Context, attrs: Attribu
 
     fun setColor(colors: List<SmallColor>) {
         this.colors = colors
+
+        val colorsPerRow = colors.size / maxVerticalRects + if (colors.size % maxVerticalRects == 0) 0 else 1
+        colorSize = ColorSize(totalWidth / colorsPerRow.toFloat(),
+                totalHeight / maxVerticalRects)
+
         requestLayout()
         invalidate()
 
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-//        val colorsPerRow = colors.size / 7 + if (colors.size % 7 == 0) 0 else 1
-//        val colorWidth = MeasureSpec.getSize(widthMeasureSpec) / colorsPerRow.toFloat()
-//        val colorHeight = colorWidth * 1.4F*scaleFactor
-//        Log.e("MeasuringSize", "Size ${MeasureSpec.getSize(widthMeasureSpec)} AllColors " + colors.size + " PerWidth " + colorsPerRow + " ColorWidth " + colorWidth + " ColorHeight " + colorHeight
-//                + " RoundedW: " + (Math.round(colorWidth*10F)/10F) + " RoundedH " + (Math.round(colorHeight*10F)/10F) + " SCALEFACTOR " + scaleFactor)
-//        colorSize = ColorSize(colorWidth, colorHeight)
-//        setMeasuredDimension(widthMeasureSpec,
-//                View.resolveSize((maxVerticalRects * colorHeight).toInt(), heightMeasureSpec))
-
         setMeasuredDimension(widthMeasureSpec,
-                View.resolveSize((maxVerticalRects * 7F * scaleFactor).toInt(), heightMeasureSpec))
+                View.resolveSize(totalHeight.toInt(), heightMeasureSpec))
+
+//        setMeasuredDimension(widthMeasureSpec,
+//                View.resolveSize((maxVerticalRects * 7F * scaleFactor).toInt(), heightMeasureSpec))
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -72,10 +80,10 @@ class ColorPickerView @JvmOverloads constructor(context: Context, attrs: Attribu
             canvas.drawRect(column * colorSize.width, indexModulo * colorSize.height, column * colorSize.width + colorSize.width, indexModulo * colorSize.height + colorSize.height, colorPaint)
         }
 
+        val currentX = currentPosition.x.toInt()
+        val currentY = currentPosition.y.toInt()
         chooseDrawable?.apply {
-            val currentX = currentPosition.x.toInt()
-            val currentY = currentPosition.y.toInt()
-            if (currentPosition.internal) decideVerticalColorPosition(currentX, currentY)
+            if (currentPosition.internal) decideVerticalColorPosition(currentX.toInt(), currentY)
             setBounds(currentX, currentY, (currentX + 4 * colorSize.width).toInt(), (currentY + 4 * colorSize.height).toInt())
         }
         chooseDrawable?.draw(canvas)
@@ -87,8 +95,8 @@ class ColorPickerView @JvmOverloads constructor(context: Context, attrs: Attribu
             MotionEvent.ACTION_MOVE,
             MotionEvent.ACTION_UP -> {
                 currentPosition = SelectionPosition(
-                        normalizeXCoordinate(Math.max(ev.x - (chooseDrawable?.let { it.intrinsicWidth / 2 }
-                                ?: 0), 0F)),
+                        Math.min(measuredWidth - 3 * colorSize.width, normalizeXCoordinate(Math.max(ev.x - (chooseDrawable?.let { it.intrinsicWidth / 2 }
+                                ?: 0), 0F))),
                         Math.min(measuredHeight - 3 * colorSize.height, normalizeYCoordinate(Math.max(ev.y - (chooseDrawable?.let { it.intrinsicHeight / 2 }
                                 ?: 0), 0F))),
                         true)
@@ -105,6 +113,7 @@ class ColorPickerView @JvmOverloads constructor(context: Context, attrs: Attribu
         verticalPositionSubject.onNext(roundToInt)
         horizontalPositionSubject.onNext(xPosition)
     }
+
     private fun normalizeXCoordinate(x: Float): Float {
         val modulo = x % colorSize.width
         return if (modulo == 0F) x else Math.max(x - modulo, 0F)

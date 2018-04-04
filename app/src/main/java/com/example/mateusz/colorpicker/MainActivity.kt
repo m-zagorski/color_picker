@@ -50,7 +50,7 @@ class MainActivity : AppCompatActivity() {
 
         val response: List<SmallColor> = try {
             val json = inputStream.bufferedReader().use { it.readText() }
-            Gson().fromJson<List<SmallColor>>(json)
+            Gson().fromJson(json)
         } catch (e: IOException) {
             throw RuntimeException(e.message)
         }
@@ -70,9 +70,10 @@ class MainActivity : AppCompatActivity() {
         val sharedPool = RecyclerView.RecycledViewPool()
         val rxAdapter = RxUniversalAdapter(listOf(RowItemHolderManager(sharedPool)))
 
-        val parsed = loadColors()
+        val parsed = loadColors().take(400)
 
-        drawable_test.background = ColorPickerDrawable(this, parsed)
+        drawable_test.background = SelectionDrawable(this)
+//                ColorPickerDrawable(this, parsed)
 
         scroll_test.setColor(parsed)
 
@@ -90,7 +91,7 @@ class MainActivity : AppCompatActivity() {
 
 
         val shouldBlockScroll: Observable<Boolean> = scroll_test.verticalPositionObservable
-                .switchMap { Observable.timer(300, TimeUnit.MILLISECONDS, AndroidSchedulers.mainThread()).map { false }.startWith(true) }
+                .switchMap { Observable.timer(100, TimeUnit.MILLISECONDS, AndroidSchedulers.mainThread()).map { false }.startWith(true) }
                 .startWith(false)
                 .replay(1)
                 .refCount()

@@ -6,7 +6,6 @@ import android.support.v7.app.AppCompatActivity
 import android.support.v7.widget.LinearLayoutManager
 import android.support.v7.widget.RecyclerView
 import android.support.v7.widget.SimpleItemAnimator
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -37,16 +36,10 @@ import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
-    data class RowScrollData(val id: Int, val offset: Int, val firstPosition: Int)
+    data class RowScrollData(val id: Int, val offset: Int, val firstPosition: Int, val positionOffset: Boolean = false)
 
     private val disposable = SerialDisposable()
     private val scrollSubject = PublishSubject.create<RowScrollData>()
-
-//    private val scrollOffsetObservable = scrollSubject
-//            .scan(-1 to 0, { previous, current -> current.first to previous.second + current.second })
-//            .replay(1)
-//            .refCount()
-
 
     private fun loadColors(): List<SmallColor> {
         val inputStream: InputStream = try {
@@ -77,8 +70,6 @@ class MainActivity : AppCompatActivity() {
         val sharedPool = RecyclerView.RecycledViewPool()
         val rxAdapter = RxUniversalAdapter(listOf(RowItemHolderManager(sharedPool)))
 
-//        login_test.background= LoginDrawable(this)
-
         val parsed = loadColors()
 
         drawable_test.background = ColorPickerDrawable(this, parsed)
@@ -94,36 +85,25 @@ class MainActivity : AppCompatActivity() {
             adapter = rxAdapter
         }
 
-//        val snapHelper = StartSnapHelper()
-//        snapHelper.attachToRecyclerView(main_recycler)
+        val snapHelper = StartSnapHelper()
+        snapHelper.attachToRecyclerView(main_recycler)
 
-
-        val rowColors: IntArray = resources.getIntArray(R.array.row_colors)
 
         val shouldBlockScroll: Observable<Boolean> = scroll_test.verticalPositionObservable
-                .switchMap { Observable.timer(500, TimeUnit.MILLISECONDS, AndroidSchedulers.mainThread()).map { false }.startWith(true) }
+                .switchMap { Observable.timer(300, TimeUnit.MILLISECONDS, AndroidSchedulers.mainThread()).map { false }.startWith(true) }
                 .startWith(false)
                 .replay(1)
                 .refCount()
 
-        val scrollOffsetObservable: Observable<ScrollData> = scrollSubject
-                .scan(-1 to 0, { previous, current -> current.id to previous.second + current.offset })
-                .withLatestFrom(shouldBlockScroll, BiFunction { params: Pair<Int, Int>, block: Boolean -> ScrollData(params.first, params.second, block) })
+        val scrollOffsetObservable: Observable<Pair<Int, Int>> = Observable.merge(scrollSubject, scroll_test.verticalPositionObservable.map { RowScrollData(-1, it * 384, -1, true) })
+                .scan(-1 to 0, { previous, current -> Pair(current.id, if (current.positionOffset) current.offset else previous.second + current.offset) })
                 .replay(1)
                 .refCount()
-
-//        val scrollOffsetObservable123 = scrollOffset
-//                .replay(1)
-//                .refCount()
 
         //10
         val chunkedList = parsed.chunked(7)
         val colors: List<BaseAdapterItem> = listOf<BaseAdapterItem>()
-                .plus(chunkedList.mapIndexed { index, color -> RowItem(index, color.map { ColorItem(Color.parseColor(it.hex)) }, scroll_test.verticalPositionObservable, scrollOffsetObservable, scrollSubject) })
-
-        val colors1: List<BaseAdapterItem> = listOf<BaseAdapterItem>()
-                .plus(RowItem(-1, parsed.map { ColorItem(Color.parseColor(it.hex)) }, scroll_test.verticalPositionObservable, scrollOffsetObservable, scrollSubject))
-                .plus(rowColors.mapIndexed { index, color -> RowItem(index, generateColors(color), scroll_test.verticalPositionObservable, scrollOffsetObservable, scrollSubject) })
+                .plus(chunkedList.mapIndexed { index, color -> RowItem(index, color.map { ColorItem(Color.parseColor(it.hex)) }, shouldBlockScroll, scrollOffsetObservable, scrollSubject) })
 
         disposable.setFrom(
                 main_recycler.scrollEvents()
@@ -146,28 +126,10 @@ class MainActivity : AppCompatActivity() {
 
     }
 
-    data class ScrollData(val id: Int = -1, val offset: Int = 0, val block: Boolean = false)
-
     override fun onDestroy() {
         super.onDestroy()
         disposable.set(Disposables.empty())
     }
-
-    private fun generateColors(color: Int): List<BaseAdapterItem> {
-        return listOf<BaseAdapterItem>()
-                .plus((0..9).map {
-                    ColorItem(modifyBrightness(color, 1 - (it / 9F)))
-                })
-    }
-
-
-    private fun modifyBrightness(color: Int, brightness: Float): Int {
-        val hsv = FloatArray(3)
-        Color.colorToHSV(color, hsv)
-        hsv[2] *= brightness // value component
-        return Color.HSVToColor(hsv)
-    }
-
 
     data class ColorItem(val color: Int) : KotlinBaseAdapterItem<Int> {
         override fun itemId(): Int = color
@@ -175,8 +137,8 @@ class MainActivity : AppCompatActivity() {
 
     data class RowItem(val id: Int,
                        val items: List<BaseAdapterItem>,
-                       val verticalPositionObservable: Observable<Int>,
-                       val scrollObservable: Observable<ScrollData>,
+                       val shouldBlockScrollObservable: Observable<Boolean>,
+                       val scrollObservable: Observable<Pair<Int, Int>>,
                        val scrollObserver: Observer<RowScrollData>) : KotlinBaseAdapterItem<String> {
         override fun itemId(): String = items.toString()
     }
@@ -215,35 +177,19 @@ class MainActivity : AppCompatActivity() {
                     adapter = rxAdapter
                 }
 
-//                itemView.row_recycler.onFlingListener = null
-//                snapHelper.attachToRecyclerView(itemView.row_recycler)
+                itemView.row_recycler.onFlingListener = null
+                snapHelper.attachToRecyclerView(itemView.row_recycler)
 
                 disposable.setFrom(Observable.fromCallable { item.items }
                         .subscribe(rxAdapter),
-                        item.verticalPositionObservable
-                                .distinctUntilChanged()
-                                .subscribe {
-                                    //                                    (itemView.row_recycler.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(0, -(it*384))
-                                    (itemView.row_recycler.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(it, 0)
-                                },
                         item.scrollObservable
-                                .filter {
-                                    when {
-                                        it.block -> false
-                                        item.id != it.id -> true
-                                        else -> true
-                                    }
-                                }
-                                .subscribe {
-                                    val position = it.offset / 384
-                                    Log.e("OffsetShit", "" + it + " Position " + position + " Offsetleft " + (it.offset - position * 384) + " CURRENTOFFWET " + itemView.row_recycler.computeVerticalScrollOffset())
-//                                    (itemView.row_recycler.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(position, -it.offset - position * 384)
-                                    (itemView.row_recycler.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(0, -it.offset)
-//                                    (itemView.row_recycler.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(0, itemView.row_recycler.computeVerticalScrollOffset()+it.offset)
-                                },
+                                .filter { (id, _) -> item.id != id }
+                                .subscribe { (_, offset) -> (itemView.row_recycler.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(0, -offset) },
                         itemView.row_recycler.scrollEvents()
+                                .withLatestFrom(item.shouldBlockScrollObservable, BiFunction { events: RecyclerViewScrollEvent, shouldBlock: Boolean -> events to shouldBlock })
+                                .filter { !it.second }
                                 .subscribe {
-                                    item.scrollObserver.onNext(RowScrollData(item.id, it.dy(), (itemView.row_recycler.layoutManager as LinearLayoutManager).findFirstVisibleItemPosition()))
+                                    item.scrollObserver.onNext(RowScrollData(item.id, it.first.dy(), (itemView.row_recycler.layoutManager as LinearLayoutManager).findFirstVisibleItemPosition()))
                                 }
                 )
             }
@@ -263,4 +209,4 @@ data class SmallColor(@SerializedName("name_en") val name: String,
                       @SerializedName("hex") val hex: String,
                       @SerializedName("code") val code: String)
 
-inline fun <reified T> Gson.fromJson(json: String) = this.fromJson<T>(json, object : TypeToken<T>() {}.type)
+inline fun <reified T> Gson.fromJson(json: String): T = this.fromJson<T>(json, object : TypeToken<T>() {}.type)

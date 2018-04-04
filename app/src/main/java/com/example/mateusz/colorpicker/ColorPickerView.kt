@@ -15,20 +15,14 @@ import kotlin.math.roundToInt
 
 class ColorPickerView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null, defStyle: Int = 0) : View(context, attrs, defStyle) {
 
+    private val chooseDrawable = ContextCompat.getDrawable(context, R.drawable.ic_choose_pallete1)
+    private val colorPaint = Paint()
     private val scaleFactor = context.resources.displayMetrics.density
     private val maxVerticalRects = 7
 
     private var colors: List<SmallColor> = listOf()
-
     private var currentPosition = SelectionPosition()
-
-    private val chooseDrawable = ContextCompat.getDrawable(context, R.drawable.ic_choose_pallete1)
-
-    private val colorPaint = Paint().apply {
-        color = Color.RED
-    }
-
-    private var colorSize = ColorSize(15F * scaleFactor, 21F * scaleFactor)
+    private var colorSize = ColorSize(5F * scaleFactor, 7F * scaleFactor)
 
     private val verticalPositionSubject = PublishSubject.create<Int>()
     private val horizontalPositionSubject = PublishSubject.create<Int>()
@@ -66,7 +60,7 @@ class ColorPickerView @JvmOverloads constructor(context: Context, attrs: Attribu
 //                View.resolveSize((maxVerticalRects * colorHeight).toInt(), heightMeasureSpec))
 
         setMeasuredDimension(widthMeasureSpec,
-                View.resolveSize((maxVerticalRects * 21F * scaleFactor).toInt(), heightMeasureSpec))
+                View.resolveSize((maxVerticalRects * 7F * scaleFactor).toInt(), heightMeasureSpec))
     }
 
     override fun onDraw(canvas: Canvas) {
